@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>CloudPulse — Погодное приложение</title>
-<meta name="description" content="CloudPulse — красивое тёмное погодное приложение. Прогноз, часы, карты, автоподсказки и геолокация."/>
+<meta name="description" content="CloudPulse — красивое тёмное погодное приложение. Прогноз, часы, автоподсказки и геолокация."/>
 <style>
   /* ====== BASE & THEME ====== */
   :root{
@@ -230,7 +230,7 @@
 
       <div style="height:12px"></div>
 
-      <div id="currentCard" class="current">
+      <div id="currentCard" class="current" aria-live="polite">
         <div class="left">
           <div style="display:flex;align-items:center;gap:12px;justify-content:space-between">
             <div>
@@ -242,7 +242,7 @@
 
           <div id="cond-text" class="muted" style="margin-top:8px">—</div>
 
-          <div class="details" id="details">
+          <div class="details" id="details" aria-hidden="false">
             <div class="detail">Ветер: —</div>
             <div class="detail">Влажность: —</div>
             <div class="detail">Давление: —</div>
@@ -282,7 +282,7 @@
         </div>
 
         <div id="hourly" class="hourly">
-          <div class="strip" id="hourly-strip">
+          <div class="strip" id="hourly-strip" aria-live="polite">
             <!-- hour cards -->
           </div>
         </div>
@@ -291,7 +291,7 @@
 
         <div style="display:flex;align-items:center;justify-content:space-between">
           <h3 style="margin:0">Прогноз на дни</h3>
-          <div class="tiny muted">7 дней</div>
+          <div class="tiny muted">7 дней (если доступно)</div>
         </div>
 
         <div id="days" class="days"></div>
@@ -299,7 +299,7 @@
 
       <div class="panel">
         <h3 style="margin-top:0">Подробности</h3>
-        <div class="extras" id="extras">
+        <div class="extras" id="extras" aria-live="polite">
           <div class="stat">Восход: —<div class="tiny muted">время</div></div>
           <div class="stat">Заход: —<div class="tiny muted">время</div></div>
           <div class="stat">UV: —<div class="tiny muted">индекс</div></div>
@@ -317,396 +317,598 @@
 
 <script>
 /* ================= CONFIG ================= */
-const API_KEY = 'b3c49a30ffe144edb72135917250409';
-const BASE = 'https://api.weatherapi.com/v1';
-const DEFAULT_CITY = 'Moscow';
-const DAYS = 7; // количество дней прогноза (WeatherAPI free — до 3, но 7 у платных; если сервер вернёт меньше — обработаем)
-const appState = {
-  unit: localStorage.getItem('cp_unit') || 'C', // 'C' or 'F'
-  lastCity: localStorage.getItem('cp_lastCity') || '',
-  lastResponse: null
-};
+(function(){
+  'use strict';
 
-/* ======= Helpers ======= */
-function $(id){return document.getElementById(id)}
-function formatTemp(tC){
-  return appState.unit === 'C' ? Math.round(tC) + '°C' : Math.round(tC * 9/5 +32) + '°F';
-}
-function formatTimeLocal(dtStr, tzOffset=0){
-  // dtStr format from WeatherAPI: "2025-11-22 18:00"
-  const d = new Date(dtStr.replace(' ','T'));
-  return d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-}
-function friendlyDate(dtStr){
-  const date = new Date(dtStr);
-  return date.toLocaleDateString(undefined, {weekday:'short', day:'numeric', month:'short'});
-}
-function shortKey(k){ return k.slice(0,6)+'…' }
-$('api-key-short') && ($('api-key-short').textContent = shortKey(API_KEY));
+  const API_KEY = 'b3c49a30ffe144edb72135917250409';
+  const BASE = 'https://api.weatherapi.com/v1';
+  const DEFAULT_CITY = 'Moscow';
+  const REQUESTED_DAYS = 7; // попробуем запросить 7, если сервер вернёт меньше — покажем сколько есть
+  const CACHE_TTL_MS = 1000 * 60 * 10; // 10 минут для локального кеша (по желанию)
 
-/* ======= UI references ======= */
-const searchInput = $('search-input');
-const searchBtn = $('search-btn');
-const suggestionsWrap = $('suggestions');
-const locateBtn = $('locate');
-const toggleUnitBtn = $('toggle-unit');
-const unitLabel = $('unit-label');
-const tempEl = $('temp');
-const locEl = $('loc');
-const condText = $('cond-text');
-const condIcon = $('cond-icon');
-const lastUpdated = $('last-updated');
-const lastCityEl = $('last-city');
-const hourlyStrip = $('hourly-strip');
-const daysWrap = $('days');
-const detailsEl = $('details');
-const extrasEl = $('extras');
-const refreshBtn = $('refresh');
-const downloadBtn = $('download-json');
+  const appState = {
+    unit: localStorage.getItem('cp_unit') || 'C', // 'C' or 'F'
+    lastCity: localStorage.getItem('cp_lastCity') || '',
+    lastResponse: null,
+    lastFetchedAt: localStorage.getItem('cp_lastFetchedAt') ? Number(localStorage.getItem('cp_lastFetchedAt')) : 0
+  };
 
-/* ======= Init ======= */
-unitLabel.textContent = '°' + appState.unit;
-if (appState.lastCity) lastCityEl.textContent = appState.lastCity;
-
-/* ======= API CALLS ======= */
-async function fetchWeather(q){
-  const url = \`\${BASE}/forecast.json?key=\${API_KEY}&q=\${encodeURIComponent(q)}&days=\${DAYS}&aqi=yes&alerts=yes\`;
-  const res = await fetch(url);
-  if(!res.ok){
-    const txt = await res.text();
-    throw new Error('API Error: ' + res.status + ' — ' + txt);
+  /* ======= Helpers ======= */
+  function $(id){ return document.getElementById(id); }
+  function formatTemp(tC){
+    if (tC === null || tC === undefined) return '—';
+    return appState.unit === 'C' ? Math.round(tC) + '°C' : Math.round(tC * 9/5 +32) + '°F';
   }
-  return res.json();
-}
-async function fetchSearch(q){
-  const url = \`\${BASE}/search.json?key=\${API_KEY}&q=\${encodeURIComponent(q)}\`;
-  const res = await fetch(url);
-  if(!res.ok) return [];
-  return res.json();
-}
-
-/* ======= Rendering ======= */
-function renderCurrent(data){
-  const locName = \`\${data.location.name}, \${data.location.country}\`;
-  lastCityEl.textContent = locName;
-  tempEl.textContent = formatTemp(data.current.temp_c);
-  locEl.textContent = \`\${locName} · \${data.location.localtime}\`;
-  condText.textContent = data.current.condition.text;
-  condIcon.src = 'https:' + data.current.condition.icon;
-  condIcon.alt = data.current.condition.text;
-  lastUpdated.textContent = 'обновлено: ' + new Date(data.current.last_updated.replace(' ','T')).toLocaleString();
-  // details
-  const wind = \`\${data.current.wind_kph} km/h (dir \${data.current.wind_dir})\`;
-  const hum = data.current.humidity + '%';
-  const pres = data.current.pressure_mb + ' mb';
-  const cloud = data.current.cloud + '%';
-  detailsEl.innerHTML = \`
-    <div class="detail">Ветер:<br><strong>\${wind}</strong></div>
-    <div class="detail">Влажность:<br><strong>\${hum}</strong></div>
-    <div class="detail">Давление:<br><strong>\${pres}</strong></div>
-    <div class="detail">Облачность:<br><strong>\${cloud}</strong></div>
-  \`;
-  // extras
-  const astro = data.forecast && data.forecast.forecastday && data.forecast.forecastday[0] && data.forecast.forecastday[0].astro;
-  const precip_mm = data.current.precip_mm ?? 0;
-  extrasEl.innerHTML = \`
-    <div class="stat">Восход: <div class="tiny muted">\${astro ? astro.sunrise : '—'}</div></div>
-    <div class="stat">Заход: <div class="tiny muted">\${astro ? astro.sunset : '—'}</div></div>
-    <div class="stat">UV: <div class="tiny muted">\${data.current.uv ?? '—'}</div></div>
-    <div class="stat">Осадки: <div class="tiny muted">\${precip_mm} мм</div></div>
-  \`;
-}
-
-function renderHourly(data){
-  hourlyStrip.innerHTML = '';
-  const now = Date.now();
-  const hours = data.forecast.forecastday.flatMap(fd => fd.hour);
-  // show next 24 hours (or available)
-  const nextHours = hours.slice(0, 24);
-  nextHours.forEach(h => {
-    const col = document.createElement('div');
-    col.className = 'hour-card';
-    const time = formatTimeLocal(h.time);
-    const icon = 'https:' + h.condition.icon;
-    const temp = formatTemp(h.temp_c);
-    col.innerHTML = \`
-      <strong>\${time}</strong>
-      <img src="\${icon}" alt="\${h.condition.text}" style="width:44px;height:44px;margin:6px 0">
-      <div style="font-weight:600">\${temp}</div>
-      <div class="tiny muted">\${h.condition.text}</div>
-      <div class="tiny muted" style="margin-top:6px">🌧 \${h.chance_of_rain ?? h.will_it_rain}% · 💨 \${h.wind_kph} km/h</div>
-    \`;
-    hourlyStrip.appendChild(col);
-  });
-}
-
-function renderDays(data){
-  daysWrap.innerHTML = '';
-  const days = data.forecast.forecastday || [];
-  days.forEach(d => {
-    const dayCard = document.createElement('div');
-    dayCard.className = 'day-card';
-    const dateFriendly = friendlyDate(d.date);
-    const icon = 'https:' + d.day.condition.icon;
-    const maxt = formatTemp(d.day.maxtemp_c);
-    const mint = formatTemp(d.day.mintemp_c);
-    dayCard.innerHTML = \`
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <div><strong>\${dateFriendly}</strong><div class="tiny muted">\${d.date}</div></div>
-        <img src="\${icon}" alt="\${d.day.condition.text}" style="width:48px;height:48px">
-      </div>
-      <div style="margin-top:8px;font-weight:600">\${d.day.condition.text}</div>
-      <div style="display:flex;justify-content:space-between;margin-top:8px">
-        <div class="tiny muted">Макс</div><div>\${maxt}</div>
-      </div>
-      <div style="display:flex;justify-content:space-between;margin-top:6px">
-        <div class="tiny muted">Мин</div><div>\${mint}</div>
-      </div>
-      <div style="display:flex;justify-content:space-between;margin-top:10px">
-        <div class="tiny muted">Осадки</div><div>\${d.day.totalprecip_mm} мм</div>
-      </div>
-    \`;
-    daysWrap.appendChild(dayCard);
-  });
-}
-
-/* ======= Main flow ======= */
-async function loadWeatherFor(q, opts={save:true}){
-  try{
-    showLoading();
-    const data = await fetchWeather(q);
-    appState.lastResponse = data;
-    renderCurrent(data);
-    renderHourly(data);
-    renderDays(data);
-    if (opts.save){
-      localStorage.setItem('cp_lastCity', \`\${data.location.name}, \${data.location.country}\`);
-      appState.lastCity = \`\${data.location.name}, \${data.location.country}\`;
-      lastCityEl.textContent = appState.lastCity;
-    }
-    hideSuggestions();
-  }catch(e){
-    console.error(e);
-    alert('Не удалось загрузить погоду: ' + e.message);
-  }finally{
-    hideLoading();
-  }
-}
-
-function showLoading(){
-  tempEl.textContent = '—°';
-  condText.textContent = 'Загрузка...';
-}
-
-function hideLoading(){
-  // nothing fancy — data will be rendered by render functions
-}
-
-/* ======= Events ======= */
-let searchDebounceTimer = null;
-searchInput.addEventListener('input', async e => {
-  const q = e.target.value.trim();
-  clearTimeout(searchDebounceTimer);
-  if (!q){
-    hideSuggestions(); return;
-  }
-  searchDebounceTimer = setTimeout(async () => {
-    try{
-      const res = await fetchSearch(q);
-      if (!res || res.length === 0){ hideSuggestions(); return; }
-      showSuggestions(res);
-    }catch(err){
-      console.warn('search err',err);
-      hideSuggestions();
-    }
-  }, 300);
-});
-
-searchInput.addEventListener('keydown', e => {
-  if (e.key === 'Enter') searchBtn.click();
-});
-
-function showSuggestions(list){
-  suggestionsWrap.innerHTML = '';
-  list.slice(0,10).forEach(item => {
-    const el = document.createElement('div');
-    el.className = 'suggestion';
-    el.textContent = \`\${item.name}, \${item.region || item.country || ''}\`;
-    el.onclick = () => {
-      searchInput.value = item.name;
-      hideSuggestions();
-      loadWeatherFor(item.url || item.name);
-    };
-    suggestionsWrap.appendChild(el);
-  });
-  suggestionsWrap.hidden = false;
-}
-
-function hideSuggestions(){ suggestionsWrap.hidden = true; suggestionsWrap.innerHTML=''; }
-
-searchBtn.addEventListener('click', () => {
-  const q = searchInput.value.trim();
-  if (!q){
-    alert('Введите город или почтовый индекс');
-    return;
-  }
-  loadWeatherFor(q);
-});
-
-locateBtn.addEventListener('click', () => {
-  if (!navigator.geolocation){
-    alert('Геолокация не поддерживается этим браузером.');
-    return;
-  }
-  navigator.geolocation.getCurrentPosition(async pos => {
-    const lat = pos.coords.latitude, lon = pos.coords.longitude;
-    loadWeatherFor(\`\${lat},\${lon}\`);
-  }, err => {
-    alert('Не удалось определить местоположение: ' + err.message);
-  }, {enableHighAccuracy:true, timeout:10000});
-});
-
-toggleUnitBtn.addEventListener('click', () => {
-  appState.unit = appState.unit === 'C' ? 'F' : 'C';
-  unitLabel.textContent = '°' + appState.unit;
-  localStorage.setItem('cp_unit', appState.unit);
-  // re-render last response if exists
-  if (appState.lastResponse){
-    renderCurrent(appState.lastResponse);
-    renderHourly(appState.lastResponse);
-    renderDays(appState.lastResponse);
-  }
-});
-
-refreshBtn.addEventListener('click', () => {
-  if (appState.lastCity) loadWeatherFor(appState.lastCity);
-  else loadWeatherFor(DEFAULT_CITY);
-});
-
-downloadBtn.addEventListener('click', () => {
-  if (!appState.lastResponse){ alert('Нет данных для скачивания'); return; }
-  const blob = new Blob([JSON.stringify(appState.lastResponse, null, 2)], {type:'application/json'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = 'weather.json';
-  document.body.appendChild(a); a.click(); a.remove();
-  URL.revokeObjectURL(url);
-});
-
-/* ======= Keyboard shortcuts (nice UX) ======= */
-document.addEventListener('keydown', e => {
-  if (e.key === 'k' && (e.ctrlKey || e.metaKey)){ e.preventDefault(); searchInput.focus(); searchInput.select(); }
-});
-
-/* ======= Small animations: background parallax on mouse ======= */
-document.addEventListener('mousemove', e => {
-  const x = (e.clientX / window.innerWidth - 0.5) * 20;
-  const y = (e.clientY / window.innerHeight - 0.5) * 20;
-  document.body.style.backgroundPosition = \`\${50 - x}% \${50 - y}%\`;
-});
-
-/* ======= On load: try to restore or geolocate ======= */
-async function start(){
-  // if last city in storage, use it
-  if (appState.lastCity){
+  function formatTimeLocal(dtStr){
     try {
-      await loadWeatherFor(appState.lastCity, {save:false}); // we already have it saved
-      return;
-    } catch(e){
-      console.warn('restore lastCity failed',e);
+      // dtStr like "2025-11-22 18:00"
+      const d = new Date(dtStr.replace(' ', 'T'));
+      if (isNaN(d)) return dtStr;
+      return d.toLocaleTimeString(undefined, {hour:'2-digit',minute:'2-digit'});
+    } catch (e) {
+      return dtStr;
+    }
+  }
+  function friendlyDate(dtStr){
+    try {
+      const date = new Date(dtStr);
+      if (isNaN(date)) return dtStr;
+      return date.toLocaleDateString(undefined, {weekday:'short', day:'numeric', month:'short'});
+    } catch (e) {
+      return dtStr;
+    }
+  }
+  function shortKey(k){ return typeof k === 'string' && k.length > 8 ? k.slice(0,6)+'…' : k; }
+
+  // safe getter for nested props
+  function safe(obj, path, fallback) {
+    try {
+      return path.split('.').reduce((s,p)=> (s && s[p] !== undefined) ? s[p] : undefined, obj) ?? fallback;
+    } catch (e) { return fallback; }
+  }
+
+  /* ======= UI references ======= */
+  const searchInput = $('search-input');
+  const searchBtn = $('search-btn');
+  const suggestionsWrap = $('suggestions');
+  const locateBtn = $('locate');
+  const toggleUnitBtn = $('toggle-unit');
+  const unitLabel = $('unit-label');
+  const tempEl = $('temp');
+  const locEl = $('loc');
+  const condText = $('cond-text');
+  const condIcon = $('cond-icon');
+  const lastUpdated = $('last-updated');
+  const lastCityEl = $('last-city');
+  const hourlyStrip = $('hourly-strip');
+  const daysWrap = $('days');
+  const detailsEl = $('details');
+  const extrasEl = $('extras');
+  const refreshBtn = $('refresh');
+  const downloadBtn = $('download-json');
+  const apiKeyShortSpan = $('api-key-short');
+
+  if (apiKeyShortSpan) apiKeyShortSpan.textContent = shortKey(API_KEY);
+
+  /* ======= Init ======= */
+  unitLabel.textContent = '°' + appState.unit;
+  if (appState.lastCity) lastCityEl.textContent = appState.lastCity;
+
+  /* ======= Simple caching layer (localStorage) ======= */
+  function saveCache(city, data) {
+    try {
+      localStorage.setItem('cp_cache_' + city, JSON.stringify({ ts: Date.now(), data }));
+      localStorage.setItem('cp_lastCity', city);
+      localStorage.setItem('cp_lastFetchedAt', String(Date.now()));
+      appState.lastCity = city;
+      appState.lastFetchedAt = Date.now();
+    } catch (e) { /* ignore storage write errors */ }
+  }
+  function loadCache(city) {
+    try {
+      const raw = localStorage.getItem('cp_cache_' + city);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || !parsed.ts || !parsed.data) return null;
+      if (Date.now() - parsed.ts > CACHE_TTL_MS) return null;
+      return parsed.data;
+    } catch (e) { return null; }
+  }
+
+  /* ======= API CALLS ======= */
+  async function fetchWeather(q){
+    const safeQ = typeof q === 'string' ? q : String(q);
+    const url = `${BASE}/forecast.json?key=${API_KEY}&q=${encodeURIComponent(safeQ)}&days=${REQUESTED_DAYS}&aqi=yes&alerts=yes&lang=ru`;
+    const res = await fetch(url);
+    if (!res.ok) {
+      const txt = await res.text().catch(()=>(''));
+      throw new Error('API Error: ' + res.status + ' — ' + (txt || res.statusText));
+    }
+    const json = await res.json();
+    // basic validation
+    if (!json || !json.location) throw new Error('Неверный ответ API');
+    return json;
+  }
+
+  async function fetchSearch(q){
+    const url = `${BASE}/search.json?key=${API_KEY}&q=${encodeURIComponent(q)}&lang=ru`;
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    const json = await res.json();
+    if (!Array.isArray(json)) return [];
+    return json;
+  }
+
+  /* ======= Rendering ======= */
+  function renderCurrent(data){
+    if (!data) return;
+    const locName = `${safe(data, 'location.name', '')}${safe(data, 'location.region', '') ? ', ' + safe(data, 'location.region') : ''}${safe(data, 'location.country') ? ', ' + safe(data, 'location.country') : ''}`;
+    lastCityEl.textContent = locName || '—';
+    tempEl.textContent = formatTemp(safe(data, 'current.temp_c', null));
+    locEl.textContent = `${locName} · ${safe(data, 'location.localtime', '')}`;
+    condText.textContent = safe(data, 'current.condition.text', '—');
+    const iconUrl = safe(data, 'current.condition.icon', '');
+    if (iconUrl) {
+      condIcon.src = iconUrl.startsWith('http') ? iconUrl : ('https:' + iconUrl);
+      condIcon.alt = safe(data, 'current.condition.text', '');
+      condIcon.style.display = '';
+    } else {
+      condIcon.style.display = 'none';
+    }
+    const lastUpdatedText = safe(data, 'current.last_updated', '');
+    lastUpdated.textContent = lastUpdatedText ? ('обновлено: ' + new Date(lastUpdatedText.replace(' ', 'T')).toLocaleString()) : 'обновлено: —';
+
+    // details
+    const wind = `${safe(data, 'current.wind_kph', '—')} km/h (dir ${safe(data, 'current.wind_dir', '—')})`;
+    const hum = (safe(data, 'current.humidity', '—') !== '—') ? (safe(data, 'current.humidity') + '%') : '—';
+    const pres = (safe(data, 'current.pressure_mb', '—') !== '—') ? (safe(data, 'current.pressure_mb') + ' mb') : '—';
+    const cloud = (safe(data, 'current.cloud', '—') !== '—') ? (safe(data, 'current.cloud') + '%') : '—';
+
+    detailsEl.innerHTML = `
+      <div class="detail">Ветер:<br><strong>${wind}</strong></div>
+      <div class="detail">Влажность:<br><strong>${hum}</strong></div>
+      <div class="detail">Давление:<br><strong>${pres}</strong></div>
+      <div class="detail">Облачность:<br><strong>${cloud}</strong></div>
+    `;
+
+    // extras (astro may be missing)
+    const astro = safe(data, 'forecast.forecastday.0.astro', null);
+    const precip_mm = safe(data, 'current.precip_mm', '—');
+    extrasEl.innerHTML = `
+      <div class="stat">Восход: <div class="tiny muted">${astro ? astro.sunrise : '—'}</div></div>
+      <div class="stat">Заход: <div class="tiny muted">${astro ? astro.sunset : '—'}</div></div>
+      <div class="stat">UV: <div class="tiny muted">${safe(data, 'current.uv', '—')}</div></div>
+      <div class="stat">Осадки: <div class="tiny muted">${precip_mm} мм</div></div>
+    `;
+  }
+
+  function renderHourly(data){
+    hourlyStrip.innerHTML = '';
+    if (!data || !data.forecast || !Array.isArray(data.forecast.forecastday)) return;
+    // merge hours
+    const hours = data.forecast.forecastday.reduce((acc, fd) => {
+      if (Array.isArray(fd.hour)) acc.push(...fd.hour);
+      return acc;
+    }, []);
+    // pick next 24 hours relative to localtime of location if possible
+    const nextHours = hours.slice(0, 24);
+    nextHours.forEach(h => {
+      const col = document.createElement('div');
+      col.className = 'hour-card';
+      const time = formatTimeLocal(safe(h, 'time', ''));
+      const icon = safe(h, 'condition.icon', '') ? (safe(h, 'condition.icon').startsWith('http') ? safe(h, 'condition.icon') : ('https:' + safe(h, 'condition.icon'))) : '';
+      const temp = formatTemp(safe(h, 'temp_c', null));
+      const text = safe(h, 'condition.text', '—');
+      const chance = safe(h, 'chance_of_rain', safe(h, 'will_it_rain', '—'));
+      const wind = safe(h, 'wind_kph', '—');
+      col.innerHTML = `
+        <strong>${time}</strong>
+        ${icon ? `<img src="${icon}" alt="${text}" style="width:44px;height:44px;margin:6px 0">` : ''}
+        <div style="font-weight:600">${temp}</div>
+        <div class="tiny muted">${text}</div>
+        <div class="tiny muted" style="margin-top:6px">🌧 ${chance}% · 💨 ${wind} km/h</div>
+      `;
+      hourlyStrip.appendChild(col);
+    });
+  }
+
+  function renderDays(data){
+    daysWrap.innerHTML = '';
+    if (!data || !data.forecast || !Array.isArray(data.forecast.forecastday)) return;
+    const days = data.forecast.forecastday || [];
+    days.forEach(d => {
+      const dayCard = document.createElement('div');
+      dayCard.className = 'day-card';
+      const dateFriendly = friendlyDate(safe(d, 'date', ''));
+      const icon = safe(d, 'day.condition.icon', '') ? (safe(d, 'day.condition.icon').startsWith('http') ? safe(d, 'day.condition.icon') : ('https:' + safe(d, 'day.condition.icon'))) : '';
+      const maxt = formatTemp(safe(d, 'day.maxtemp_c', null));
+      const mint = formatTemp(safe(d, 'day.mintemp_c', null));
+      const precipitation = safe(d, 'day.totalprecip_mm', '—');
+      const conditionText = safe(d, 'day.condition.text', '—');
+      dayCard.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div><strong>${dateFriendly}</strong><div class="tiny muted">${safe(d, 'date','')}</div></div>
+          ${icon ? `<img src="${icon}" alt="${conditionText}" style="width:48px;height:48px">` : ''}
+        </div>
+        <div style="margin-top:8px;font-weight:600">${conditionText}</div>
+        <div style="display:flex;justify-content:space-between;margin-top:8px">
+          <div class="tiny muted">Макс</div><div>${maxt}</div>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-top:6px">
+          <div class="tiny muted">Мин</div><div>${mint}</div>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-top:10px">
+          <div class="tiny muted">Осадки</div><div>${precipitation} мм</div>
+        </div>
+      `;
+      daysWrap.appendChild(dayCard);
+    });
+  }
+
+  /* ======= Main flow ======= */
+  async function loadWeatherFor(q, opts = { save: true, forceFetch: false }) {
+    if (!q) return;
+    showLoading();
+
+    // try cache first if not forced
+    const cacheCandidate = !opts.forceFetch ? loadCache(q) : null;
+    if (cacheCandidate) {
+      try {
+        appState.lastResponse = cacheCandidate;
+        renderCurrent(cacheCandidate);
+        renderHourly(cacheCandidate);
+        renderDays(cacheCandidate);
+        hideSuggestions();
+        hideLoading();
+        return;
+      } catch (e) {
+        // fallthrough to fetch
+        console.warn('cache render failed', e);
+      }
+    }
+
+    try {
+      const data = await fetchWeather(q);
+      // if server returns less days than requested, it's ok — we'll render what we have
+      appState.lastResponse = data;
+      renderCurrent(data);
+      renderHourly(data);
+      renderDays(data);
+
+      if (opts.save) {
+        try {
+          const cityLabel = `${safe(data, 'location.name', '')}${safe(data, 'location.country') ? ', ' + safe(data, 'location.country') : ''}`;
+          saveCache(cityLabel, data);
+          lastCityEl.textContent = cityLabel;
+        } catch (e) { /* ignore */ }
+      }
+      hideSuggestions();
+    } catch (e) {
+      console.error('loadWeatherFor error', e);
+      alert('Не удалось загрузить погоду: ' + (e && e.message ? e.message : String(e)));
+    } finally {
+      hideLoading();
     }
   }
 
-  // try geolocation silently
-  if (navigator.geolocation){
-    navigator.geolocation.getCurrentPosition(async pos => {
-      try { await loadWeatherFor(\`\${pos.coords.latitude},\${pos.coords.longitude}\`); }
-      catch(e){ console.warn(e); await loadWeatherFor(DEFAULT_CITY); }
-    }, async err => {
-      // fallback to default
-      await loadWeatherFor(DEFAULT_CITY);
-    }, {timeout:6000});
-  } else {
-    await loadWeatherFor(DEFAULT_CITY);
+  function showLoading(){
+    if (tempEl) tempEl.textContent = '—°';
+    if (condText) condText.textContent = 'Загрузка...';
   }
-}
+  function hideLoading(){ /* nothing specific - data replace UI */ }
 
-start();
+  /* ======= Events ======= */
+  let searchDebounceTimer = null;
+  if (searchInput) {
+    searchInput.addEventListener('input', async (e) => {
+      const q = e.target.value.trim();
+      clearTimeout(searchDebounceTimer);
+      if (!q) {
+        hideSuggestions(); return;
+      }
+      searchDebounceTimer = setTimeout(async () => {
+        try {
+          const res = await fetchSearch(q);
+          if (!res || res.length === 0){ hideSuggestions(); return; }
+          showSuggestions(res);
+        } catch (err) {
+          console.warn('search err', err);
+          hideSuggestions();
+        }
+      }, 300);
+    });
 
-/* ======= Extra: toggles that show simple charts (built-in canvas) ======= */
-document.getElementById('toggle-precip').addEventListener('click', () => {
-  if (!appState.lastResponse){ alert('Сначала выполните поиск города.'); return; }
-  showSimpleChart(appState.lastResponse, 'precip_mm', 'Осадки (мм)');
-});
-document.getElementById('toggle-wind').addEventListener('click', () => {
-  if (!appState.lastResponse){ alert('Сначала выполните поиск города.'); return; }
-  showSimpleChart(appState.lastResponse, 'wind_kph', 'Ветер (км/ч)');
-});
-
-function showSimpleChart(data, key, label){
-  // build modal with simple canvas chart
-  const hours = data.forecast.forecastday.flatMap(fd => fd.hour).slice(0,24);
-  const values = hours.map(h => h[key] ?? 0);
-  const labels = hours.map(h => formatTimeLocal(h.time));
-  // create modal
-  const modal = document.createElement('div');
-  modal.style.position='fixed';modal.style.inset='0';modal.style.background='rgba(2,6,12,0.6)';
-  modal.style.display='grid';modal.style.placeItems='center';modal.style.zIndex=9999;
-  const card = document.createElement('div');
-  card.style.width='min(880px,96%)';card.style.background='var(--card)';card.style.borderRadius='14px';card.style.padding='18px';
-  card.style.border='1px solid rgba(255,255,255,0.03)';
-  const title = document.createElement('div'); title.innerHTML = '<strong>'+label+'</strong><div class="tiny muted">24 часа</div>';
-  const canvas = document.createElement('canvas'); canvas.width=800; canvas.height=300; canvas.style.width='100%'; canvas.style.marginTop='10px';
-  const close = document.createElement('button'); close.className='btn'; close.textContent='Закрыть'; close.style.marginTop='12px';
-  card.appendChild(title); card.appendChild(canvas); card.appendChild(close); modal.appendChild(card); document.body.appendChild(modal);
-  close.onclick = () => modal.remove();
-
-  // draw simple chart with JS + canvas
-  const ctx = canvas.getContext('2d');
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  const padding = 40;
-  const w = canvas.width - padding*2;
-  const h = canvas.height - padding*2;
-  const max = Math.max(...values) || 1;
-  const min = Math.min(...values);
-  // grid
-  ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth=1;
-  for (let i=0;i<=4;i++){
-    const y = padding + (h/4)*i;
-    ctx.beginPath(); ctx.moveTo(padding,y); ctx.lineTo(padding+w,y); ctx.stroke();
+    searchInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter') searchBtn && searchBtn.click();
+    });
   }
-  // polyline
-  ctx.beginPath();
-  values.forEach((v,i)=>{
-    const x = padding + (i/(values.length-1))*w;
-    const y = padding + h - ((v - min)/(max - min || 1))*h;
-    if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+
+  function showSuggestions(list){
+    if (!suggestionsWrap) return;
+    suggestionsWrap.innerHTML = '';
+    const toShow = Array.isArray(list) ? list.slice(0, 10) : [];
+    toShow.forEach(item => {
+      const el = document.createElement('div');
+      el.className = 'suggestion';
+      // Some search results from weatherapi have name+region+country or fields like url.
+      const region = item.region || item.country || '';
+      el.textContent = `${item.name}${region ? ', ' + region : ''}`;
+      el.onclick = () => {
+        // Prefer coordinates url if provided (WeatherAPI returns url like "/q/zmw:..."), but simpler to use name
+        searchInput.value = item.name || '';
+        hideSuggestions();
+        // load by name — safe
+        loadWeatherFor(item.name || item.url || item.query || item.name);
+      };
+      suggestionsWrap.appendChild(el);
+    });
+    suggestionsWrap.hidden = false;
+  }
+
+  function hideSuggestions(){ if (suggestionsWrap) { suggestionsWrap.hidden = true; suggestionsWrap.innerHTML = ''; } }
+
+  if (searchBtn) {
+    searchBtn.addEventListener('click', () => {
+      const q = searchInput.value.trim();
+      if (!q){
+        alert('Введите город или почтовый индекс');
+        return;
+      }
+      loadWeatherFor(q);
+    });
+  }
+
+  if (locateBtn) {
+    locateBtn.addEventListener('click', () => {
+      if (!navigator.geolocation){
+        alert('Геолокация не поддерживается этим браузером.');
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(async pos => {
+        const lat = pos.coords.latitude, lon = pos.coords.longitude;
+        loadWeatherFor(`${lat},${lon}`);
+      }, err => {
+        alert('Не удалось определить местоположение: ' + (err && err.message ? err.message : String(err)));
+      }, {enableHighAccuracy:true, timeout:10000});
+    });
+  }
+
+  if (toggleUnitBtn) {
+    toggleUnitBtn.addEventListener('click', () => {
+      appState.unit = appState.unit === 'C' ? 'F' : 'C';
+      unitLabel.textContent = '°' + appState.unit;
+      localStorage.setItem('cp_unit', appState.unit);
+      // re-render last response if exists
+      if (appState.lastResponse){
+        renderCurrent(appState.lastResponse);
+        renderHourly(appState.lastResponse);
+        renderDays(appState.lastResponse);
+      }
+    });
+  }
+
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', () => {
+      const last = appState.lastCity || searchInput.value.trim() || DEFAULT_CITY;
+      loadWeatherFor(last, {save:true, forceFetch:true});
+    });
+  }
+
+  if (downloadBtn) {
+    downloadBtn.addEventListener('click', () => {
+      if (!appState.lastResponse){ alert('Нет данных для скачивания'); return; }
+      try {
+        const blob = new Blob([JSON.stringify(appState.lastResponse, null, 2)], {type:'application/json'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'weather.json';
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(url);
+      } catch (e) {
+        alert('Не удалось создать файл: ' + (e && e.message ? e.message : String(e)));
+      }
+    });
+  }
+
+  /* ======= Keyboard shortcuts (nice UX) ======= */
+  document.addEventListener('keydown', e => {
+    if (e.key === 'k' && (e.ctrlKey || e.metaKey)){ e.preventDefault(); searchInput.focus(); searchInput.select(); }
   });
-  ctx.strokeStyle = 'rgba(125,211,252,0.9)'; ctx.lineWidth=2.6; ctx.stroke();
-  // points
-  values.forEach((v,i)=>{
-    const x = padding + (i/(values.length-1))*w;
-    const y = padding + h - ((v - min)/(max - min || 1))*h;
-    ctx.fillStyle='rgba(125,211,252,0.95)'; ctx.beginPath(); ctx.arc(x,y,3,0,Math.PI*2); ctx.fill();
+
+  /* ======= Small animations: background parallax on mouse ======= */
+  document.addEventListener('mousemove', e => {
+    const x = (e.clientX / window.innerWidth - 0.5) * 20;
+    const y = (e.clientY / window.innerHeight - 0.5) * 20;
+    // keep as percentage string
+    document.body.style.backgroundPosition = `${50 - x}% ${50 - y}%`;
   });
-  // labels (only few)
-  ctx.fillStyle='rgba(255,255,255,0.7)'; ctx.font='12px Inter';
-  for (let i=0;i<values.length;i+=Math.ceil(values.length/6)){
-    const x = padding + (i/(values.length-1))*w;
-    ctx.fillText(labels[i], x-18, padding+h+18);
+
+  /* ======= On load: try to restore or geolocate ======= */
+  async function start(){
+    // prefer cached lastCity if still valid
+    if (appState.lastCity) {
+      const cached = loadCache(appState.lastCity);
+      if (cached) {
+        try {
+          appState.lastResponse = cached;
+          renderCurrent(cached);
+          renderHourly(cached);
+          renderDays(cached);
+        } catch (e) {
+          console.warn('cached render fail', e);
+        }
+      } else {
+        // try to fetch fresh
+        try {
+          await loadWeatherFor(appState.lastCity, {save:true, forceFetch:false});
+          return;
+        } catch (e) {
+          console.warn('restore lastCity failed', e);
+        }
+      }
+    }
+
+    // try geolocation silently (no prompt fallbacks)
+    if (navigator.geolocation){
+      let geoTimedOut = false;
+      const geoPromise = new Promise((resolve) => {
+        const onSuccess = async (pos) => {
+          try { await loadWeatherFor(`${pos.coords.latitude},${pos.coords.longitude}`, {save:true}); } catch (e) { console.warn(e); }
+          resolve();
+        };
+        const onFail = async () => {
+          resolve();
+        };
+        try {
+          navigator.geolocation.getCurrentPosition(onSuccess, onFail, {timeout:6000});
+        } catch (e) {
+          resolve();
+        }
+      });
+      // Wait short while, then if nothing, fallback
+      await geoPromise;
+      // If no data loaded yet, fallback:
+      if (!appState.lastResponse) {
+        await loadWeatherFor(DEFAULT_CITY, {save:true});
+      }
+    } else {
+      await loadWeatherFor(DEFAULT_CITY, {save:true});
+    }
   }
-  // left scale
-  ctx.fillStyle='rgba(255,255,255,0.6)'; ctx.font='12px Inter';
-  ctx.fillText(max.toFixed(0), 8, padding+6);
-  ctx.fillText(((max+min)/2).toFixed(0), 8, padding + h/2);
-  ctx.fillText(min.toFixed(0), 8, padding + h + 4);
-}
 
-/* ======= Extra accessibility: announce errors ======= */
-window.addEventListener('error', e => {
-  console.error('Unhandled error', e);
-});
+  start();
 
+  /* ======= Extra: toggles that show simple charts (built-in canvas) ======= */
+  const togglePrecipBtn = $('toggle-precip');
+  const toggleWindBtn = $('toggle-wind');
+
+  if (togglePrecipBtn) {
+    togglePrecipBtn.addEventListener('click', () => {
+      if (!appState.lastResponse){ alert('Сначала выполните поиск города.'); return; }
+      showSimpleChart(appState.lastResponse, 'precip_mm', 'Осадки (мм)');
+    });
+  }
+  if (toggleWindBtn) {
+    toggleWindBtn.addEventListener('click', () => {
+      if (!appState.lastResponse){ alert('Сначала выполните поиск города.'); return; }
+      showSimpleChart(appState.lastResponse, 'wind_kph', 'Ветер (км/ч)');
+    });
+  }
+
+  function showSimpleChart(data, key, label){
+    try {
+      const hours = (safe(data, 'forecast.forecastday', []).flatMap(fd => Array.isArray(fd.hour) ? fd.hour : [])).slice(0,24);
+      const values = hours.map(h => (h && h[key] !== undefined) ? Number(h[key]) : 0);
+      const labels = hours.map(h => formatTimeLocal(safe(h,'time','')));
+
+      // create modal
+      const existing = document.getElementById('cp_modal_chart');
+      if (existing) existing.remove();
+
+      const modal = document.createElement('div');
+      modal.id = 'cp_modal_chart';
+      modal.style.position='fixed';
+      modal.style.inset='0';
+      modal.style.background='rgba(2,6,12,0.6)';
+      modal.style.display='grid';
+      modal.style.placeItems='center';
+      modal.style.zIndex=9999;
+
+      const card = document.createElement('div');
+      card.style.width='min(880px,96%)';
+      card.style.maxWidth='980px';
+      card.style.background='var(--card)';
+      card.style.borderRadius='14px';
+      card.style.padding='18px';
+      card.style.border='1px solid rgba(255,255,255,0.03)';
+      card.style.boxSizing='border-box';
+      card.style.boxShadow = 'var(--shadow)';
+
+      const title = document.createElement('div');
+      title.innerHTML = `<strong>${label}</strong><div class="tiny muted">24 часа</div>`;
+
+      const canvas = document.createElement('canvas');
+      canvas.width = 900;
+      canvas.height = 340;
+      canvas.style.width = '100%';
+      canvas.style.marginTop = '10px';
+      canvas.style.background = 'transparent';
+      canvas.style.borderRadius = '8px';
+
+      const close = document.createElement('button');
+      close.className = 'btn';
+      close.textContent = 'Закрыть';
+      close.style.marginTop = '12px';
+      close.addEventListener('click', () => modal.remove());
+
+      card.appendChild(title);
+      card.appendChild(canvas);
+      card.appendChild(close);
+      modal.appendChild(card);
+      document.body.appendChild(modal);
+
+      // canvas drawing
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      const padding = 48;
+      const w = canvas.width - padding*2;
+      const h = canvas.height - padding*2;
+      const max = Math.max(...values) || 1;
+      const min = Math.min(...values);
+      // grid
+      ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth=1;
+      for (let i=0;i<=4;i++){
+        const y = padding + (h/4)*i;
+        ctx.beginPath(); ctx.moveTo(padding,y); ctx.lineTo(padding+w,y); ctx.stroke();
+      }
+      // polyline
+      ctx.beginPath();
+      values.forEach((v,i)=>{
+        const x = padding + (i/(Math.max(1, values.length-1)))*w;
+        const y = padding + h - ((v - min)/( (max - min) || 1))*h;
+        if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+      });
+      ctx.strokeStyle = 'rgba(125,211,252,0.95)'; ctx.lineWidth=2.6; ctx.stroke();
+      // points
+      values.forEach((v,i)=>{
+        const x = padding + (i/(Math.max(1, values.length-1)))*w;
+        const y = padding + h - ((v - min)/( (max - min) || 1))*h;
+        ctx.fillStyle='rgba(125,211,252,0.95)'; ctx.beginPath(); ctx.arc(x,y,3,0,Math.PI*2); ctx.fill();
+      });
+      // labels (few)
+      ctx.fillStyle='rgba(255,255,255,0.7)'; ctx.font='12px Inter';
+      const step = Math.max(1, Math.floor(values.length/6));
+      for (let i=0;i<values.length;i+=step){
+        const x = padding + (i/(Math.max(1, values.length-1)))*w;
+        const txt = labels[i] || '';
+        ctx.fillText(txt, Math.max(0, x-18), padding+h+18);
+      }
+      // left scale
+      ctx.fillStyle='rgba(255,255,255,0.6)'; ctx.font='12px Inter';
+      ctx.fillText((max).toFixed(0), 8, padding+6);
+      ctx.fillText(((max+min)/2).toFixed(0), 8, padding + h/2);
+      ctx.fillText((min).toFixed(0), 8, padding + h + 4);
+    } catch (e) {
+      console.error('showSimpleChart err', e);
+      alert('Не удалось отобразить график: ' + (e && e.message ? e.message : String(e)));
+    }
+  }
+
+  /* ======= Extra accessibility: announce errors ======= */
+  window.addEventListener('error', e => {
+    console.error('Unhandled error', e);
+  });
+
+  // expose some helpers for debugging (dev only)
+  window.cp = {
+    loadWeatherFor,
+    appState,
+    fetchWeather,
+    fetchSearch
+  };
+
+})();
 </script>
 </body>
 </html>
