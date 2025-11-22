@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Погодное приложение</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
+
+  /* Reset and base */
+  * {
+    margin: 0; padding: 0; box-sizing: border-box;
+  }
+  body {
+    font-family: 'Inter', sans-serif;
+    background: #121212;
+    color: #eee;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2rem 1rem;
+  }
+  h1 {
+    font-weight: 700;
+    font-size: 2.5rem;
+    margin-bottom: 1rem;
+    color: #4fc3f7;
+    text-align: center;
+  }
+  form {
+    margin-bottom: 2rem;
+    display: flex;
+    width: 100%;
+    max-width: 400px;
+  }
+  input[type=text] {
+    flex-grow: 1;
+    padding: 0.75rem 1rem;
+    border: none;
+    border-radius: 4px 0 0 4px;
+    font-size: 1rem;
+    outline: none;
+  }
+  button {
+    padding: 0 1.5rem;
+    border: none;
+    background: #4fc3f7;
+    color: #121212;
+    font-weight: 700;
+    cursor: pointer;
+    border-radius: 0 4px 4px 0;
+    transition: background-color 0.3s;
+  }
+  button:hover {
+    background: #36a4d9;
+  }
+
+  .weather-container {
+    background: #1e1e1e;
+    border-radius: 12px;
+    padding: 2rem;
+    width: 100%;
+    max-width: 480px;
+    box-shadow: 0 0 10px rgba(79,195,247,0.5);
+    display: none;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .location {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+  }
+  .description {
+    font-size: 1.1rem;
+    font-style: italic;
+    color: #a0a0a0;
+    margin-bottom: 1rem;
+  }
+  .temp {
+    font-size: 4rem;
+    font-weight: 700;
+    color: #4fc3f7;
+    margin-bottom: 0.5rem;
+  }
+  .feels-like {
+    font-size: 1rem;
+    color: #8ec6f7;
+  }
+  .weather-icon img {
+    width: 100px;
+    height: 100px;
+  }
+  .details {
+    display: flex;
+    justify-content: space-around;
+    width: 100%;
+    margin-top: 1rem;
+  }
+  .detail-item {
+    text-align: center;
+    font-size: 0.9rem;
+  }
+  .detail-item svg {
+    fill: #4fc3f7;
+    width: 24px;
+    height: 24px;
+    margin-bottom: 0.25rem;
+  }
+
+  /* Responsive */
+  @media (max-width: 500px) {
+    .weather-container {
+      padding: 1.5rem;
+      max-width: 100%;
+    }
+    .temp {
+      font-size: 3rem;
+    }
+    button, input[type=text] {
+      font-size: 0.9rem;
+    }
+  }
+
+  footer {
+    margin-top: 3rem;
+    font-size: 0.8rem;
+    color: #666;
+  }
+</style>
+</head>
+<body>
+
+<h1>Погодное приложение</h1>
+
+<form id="weatherForm">
+  <input type="text" id="cityInput" placeholder="Введите город (например, Москва)" required />
+  <button type="submit">Узнать погоду</button>
+</form>
+
+<div class="weather-container" id="weatherContainer" aria-live="polite">
+  <div class="location" id="location"></div>
+  <div class="description" id="description"></div>
+  <div class="temp" id="temp"></div>
+  <div class="feels-like" id="feelsLike"></div>
+  <div class="weather-icon" id="weatherIcon"></div>
+  <div class="details">
+    <div class="detail-item" title="Влажность">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 3.19L9.2 7.63C6.5 11.1 5 13 5 15a7 7 0 0 0 14 0c0-2-1.5-3.9-4.2-7.37ZM7.5 17.5A5.5 5.5 0 0 1 6 15c0-1.54 1-3.43 3-6.09 1.2 1.6 1.87 2.58 2.96 4.4 1.07 1.8 1.6 3 1.6 3.79a2.5 2.5 0 1 1-6.06 0Z"/></svg>
+      <div id="humidity"></div>
+    </div>
+    <div class="detail-item" title="Скорость ветра">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 4l8 4-8 4-8-4 8-4zm0 7v8"/></svg>
+      <div id="wind"></div>
+    </div>
+    <div class="detail-item" title="Давление">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 4.1 7 13 7 13s7-8.9 7-13a7 7 0 0 0-7-7zm0 10a3 3 0 1 1 0-6 3 3 0 0 1 0 6z"/></svg>
+      <div id="pressure"></div>
+    </div>
+  </div>
+</div>
+
+<footer>Прогноз данных от WeatherAPI.com</footer>
+
+<script>
+  const apiKey = "b3c49a30ffe144edb72135917250409";
+
+  const form = document.getElementById('weatherForm');
+  const cityInput = document.getElementById('cityInput');
+  const weatherContainer = document.getElementById('weatherContainer');
+  const locationEl = document.getElementById('location');
+  const descriptionEl = document.getElementById('description');
+  const tempEl = document.getElementById('temp');
+  const feelsLikeEl = document.getElementById('feelsLike');
+  const weatherIconEl = document.getElementById('weatherIcon');
+  const humidityEl = document.getElementById('humidity');
+  const windEl = document.getElementById('wind');
+  const pressureEl = document.getElementById('pressure');
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const city = cityInput.value.trim();
+    if (!city) return;
+
+    try {
+      const url = `https://api.weatherapi.com/v1/current.json?key=${apiKey}&q=${encodeURIComponent(city)}&lang=ru`;
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('Город не найден или ошибка запроса');
+      const data = await response.json();
+
+      const { location, current } = data;
+
+      locationEl.textContent = `${location.name}, ${location.country}`;
+      descriptionEl.textContent = current.condition.text;
+      tempEl.textContent = `${Math.round(current.temp_c)}°C`;
+      feelsLikeEl.textContent = `Ощущается как ${Math.round(current.feelslike_c)}°C`;
+      weatherIconEl.innerHTML = `<img src="https:${current.condition.icon}" alt="${current.condition.text}" />`;
+      humidityEl.textContent = `${current.humidity}%`;
+      windEl.textContent = `${current.wind_kph} км/ч ${windDirection(current.wind_dir)}`;
+      pressureEl.textContent = `${current.pressure_mb} мбар`;
+
+      weatherContainer.style.display = 'flex';
+    } catch (error) {
+      alert(error.message);
+      weatherContainer.style.display = 'none';
+    }
+  });
+
+  function windDirection(dir) {
+    const directions = {
+      N: 'Северный',
+      NNE: 'Северо-северо-восточный',
+      NE: 'Северо-восточный',
+      ENE: 'Восточно-северо-восточный',
+      E: 'Восточный',
+      ESE: 'Восточно-юго-восточный',
+      SE: 'Юго-восточный',
+      SSE: 'Юго-юго-восточный',
+      S: 'Южный',
+      SSW: 'Юго-юго-западный',
+      SW: 'Юго-западный',
+      WSW: 'Западно-юго-западный',
+      W: 'Западный',
+      WNW: 'Западно-северо-западный',
+      NW: 'Северо-западный',
+      NNW: 'Северо-северо-западный',
+    };
+    return directions[dir] || dir;
+  }
+</script>
+
+</body>
+</html>

@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Погодное приложение</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background-color: #121212;
+            color: #e0e0e0;
+            line-height: 1.6;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1200px;
+            padding: 30px;
+            background: linear-gradient(135deg, #1e1e1e 0%, #2d2d2d 100%);
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 8px;
+            background: linear-gradient(90deg, #4CAF50, #2196F3, #FF9800, #F44336);
+            border-top-left-radius: 20px;
+            border-top-right-radius: 20px;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            background: linear-gradient(45deg, #4CAF50, #2196F3);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        p.subtitle {
+            color: #aaa;
+            font-size: 1rem;
+        }
+
+        .search-container {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        #cityInput {
+            flex: 1;
+            padding: 15px 20px;
+            border: 2px solid #333;
+            border-radius: 12px;
+            background-color: #2a2a2a;
+            color: #e0e0e0;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+        }
+
+        #cityInput:focus {
+            outline: none;
+            border-color: #4CAF50;
+            box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.2);
+        }
+
+        #searchBtn {
+            padding: 15px 25px;
+            background: linear-gradient(45deg, #4CAF50, #2196F3);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 1rem;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        #searchBtn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(76, 175, 80, 0.4);
+        }
+
+        #searchBtn:active {
+            transform: translateY(0);
+        }
+
+        .weather-container {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+        }
+
+        .city-name {
+            font-size: 2rem;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: #fff;
+        }
+
+        .date {
+            color: #aaa;
+            margin-bottom: 25px;
+            font-size: 1.1rem;
+        }
+
+        .temperature {
+            font-size: 5rem;
+            font-weight: 700;
+            margin: 20px 0;
+            color: #fff;
+        }
+
+        .condition {
+            font-size: 1.5rem;
+            color: #bbb;
+            margin-bottom: 30px;
+            text-transform: capitalize;
+        }
+
+        .icon {
+            width: 120px;
+            height: 120px;
+            margin-bottom: 20px;
+        }
+
+        .details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            width: 100%;
+            margin-top: 30px;
+        }
+
+        .detail-item {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 20px;
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            transition: transform 0.3s ease, background-color 0.3s ease;
+        }
+
+        .detail-item:hover {
+            transform: translateY(-5px);
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .detail-label {
+            color: #aaa;
+            font-size: 0.9rem;
+            margin-bottom: 5px;
+        }
+
+        .detail-value {
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .error-message {
+            text-align: center;
+            color: #f44336;
+            font-size: 1.2rem;
+            margin: 30px 0;
+            padding: 20px;
+            border-radius: 12px;
+            background-color: rgba(244, 67, 54, 0.1);
+            display: none;
+        }
+
+        .loading {
+            text-align: center;
+            color: #aaa;
+            font-size: 1.2rem;
+            margin: 30px 0;
+            display: none;
+        }
+
+        .footer {
+            margin-top: 40px;
+            text-align: center;
+            color: #777;
+            font-size: 0.9rem;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                margin: 10px;
+                padding: 20px;
+            }
+
+            h1 {
+                font-size: 2rem;
+            }
+
+            #cityInput, #searchBtn {
+                padding: 12px 15px;
+            }
+
+            .temperature {
+                font-size: 4rem;
+            }
+
+            .details {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Анимации */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .fade-in {
+            animation: fadeIn 0.6s ease forwards;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>WeatherScope</h1>
+            <p class="subtitle">Точная погода в любом городе</p>
+        </header>
+
+        <div class="search-container">
+            <input type="text" id="cityInput" placeholder="Введите название города..." autocomplete="off">
+            <button id="searchBtn">Поиск</button>
+        </div>
+
+        <div id="loading" class="loading">Загружаем погоду...</div>
+        <div id="errorMessage" class="error-message"></div>
+
+        <div id="weatherContainer" class="weather-container">
+            <h2 class="city-name" id="cityName"></h2>
+            <p class="date" id="date"></p>
+            <img id="icon" class="icon" src="" alt="Погода">
+            <p class="condition" id="condition"></p>
+            <p class="temperature" id="temperature"></p>
+
+            <div class="details">
+                <div class="detail-item">
+                    <span class="detail-label">Влажность</span>
+                    <span class="detail-value" id="humidity"></span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">Давление</span>
+                    <span class="detail-value" id="pressure"></span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">Ветер</span>
+                    <span class="detail-value" id="wind"></span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">Видимость</span>
+                    <span class="detail-value" id="visibility"></span>
+                </div>
+            </div>
+        </div>
+
+        <footer class="footer">
+            &copy; 2025 WeatherScope. Данные предоставлены WeatherAPI.com
+        </footer>
+    </div>
+
+    <script>
+        const apiKey = 'b3c49a30ffe144edb72135917250409';
+        const searchBtn = document.getElementById('searchBtn');
+        const cityInput = document.getElementById('cityInput');
+        const weatherContainer = document.getElementById('weatherContainer');
+        const loading = document.getElementById('loading');
+        const errorMessage = document.getElementById('errorMessage');
+        const cityName = document.getElementById('cityName');
+        const date = document.getElementById('date');
+        const icon = document.getElementById('icon');
+        const condition = document.getElementById('condition');
+        const temperature = document.getElementById('temperature');
+        const humidity = document.getElementById('humidity');
+        const pressure = document.getElementById('pressure');
+        const wind = document.getElementById('wind');
+        const visibility = document.getElementById('visibility');
+
+        // Форматирование даты
+        function formatDate(date) {
+            const options = {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+            };
+            return new Intl.DateTimeFormat('ru-RU', options).format(date);
+        }
+
+        // Получение погоды
+        async function getWeather(city) {
+            try {
+                loading.style.display = 'block';
+                errorMessage.style.display = 'none';
+                weatherContainer.style.display = 'none';
+
+                const response = await fetch(
+                    `https://api.weatherapi.com/v1/current.json?key=${apiKey}&q=${city}&lang=ru`
+                );
+
+                if (!response.ok) {
+                    throw new Error('Город не найден или ошибка запроса');
+                }
+
+                const data = await response.json();
+
+                // Заполняем данные
+                cityName.textContent = data.location.name;
+                date.textContent = formatDate(new Date(data.current.last_updated));
+                icon.src = data.current.condition.icon;
+                icon.alt = data.current.condition.text;
+                condition.textContent = data.current.condition.text;
+                temperature.textContent = `${Math.round(data.current.temp_c)}°C`;
+                humidity.textContent = `${data.current.humidity}%`;
+                pressure.textContent = `${data.current.pressure_mb} мб`;
+                wind.textContent = `${data.current.wind_kph} км/ч`;
+                visibility.textContent = `${data.current.vis_km} км`;
+
+                // Показываем контейнер с погодой с анимацией
+                weatherContainer.style.display = 'flex';
+                weatherContainer.classList.add('fade-in');
+
+            } catch (error) {
+                errorMessage.textContent = error.message;
+                errorMessage.style.display = 'block';
+            } finally {
+                loading.style.display = 'none';
+            }
+        }
+
+        // Обработчик клика по кнопке поиска
+        searchBtn.addEventListener('click', () => {
+            const city = cityInput.value.trim();
+            if (city) {
+                getWeather(city);
+            } else {
+                errorMessage.textContent = 'Пожалуйста, введите название города';
+                errorMessage.style.display = 'block';
+            }
+        });
+
+        // Обработчик нажатия Enter в поле ввода
+        cityInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                searchBtn.click();
+            }
+        });
+
+        // При загрузке страницы показываем погоду для текущего местоположения (если разрешено)
+        window.addEventListener('load', () => {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(position => {
+                    const lat = position.coords.latitude;
+                    const lon = position.coords.longitude;
+                    fetch(`https://api.weatherapi.com/v1/current.json?key=${apiKey}&q=${lat},${lon}&lang=ru`)
+                        .then(response => response.json())
+                        .then(data => {
+                            cityInput.value = data.location.name;
+                            getWeather(data.location.name);
+                        })
+                        .catch(() => {
+                            // Если не удалось получить погоду по геолокации, ждём ввода пользователя
+                        });
+                }, () => {
+                    // Если пользователь запретил геолокацию, ждём ввода
+                });
+            }
+        });
+    </script>
+</body>
+</html>

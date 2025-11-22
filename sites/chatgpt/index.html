@@ -1,0 +1,712 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>CloudPulse — Погодное приложение</title>
+<meta name="description" content="CloudPulse — красивое тёмное погодное приложение. Прогноз, часы, карты, автоподсказки и геолокация."/>
+<style>
+  /* ====== BASE & THEME ====== */
+  :root{
+    --bg:#071021;
+    --card:#0c1724;
+    --muted:#98a1b3;
+    --accent:#6EE7B7;
+    --accent-2:#7dd3fc;
+    --glass: rgba(255,255,255,0.02);
+    --glass-2: rgba(255,255,255,0.03);
+    --glass-3: rgba(255,255,255,0.015);
+    --danger:#ff6b6b;
+    --radius:14px;
+    --shadow: 0 6px 25px rgba(2,6,23,0.6);
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;
+    background:
+      radial-gradient(1200px 400px at 10% 10%, rgba(125,211,252,0.06), transparent 10%),
+      radial-gradient(700px 300px at 90% 90%, rgba(110,231,183,0.03), transparent 10%),
+      linear-gradient(180deg,var(--bg), #03101a 120%);
+    color:#e6eef6;
+    -webkit-font-smoothing:antialiased;
+    -moz-osx-font-smoothing:grayscale;
+    padding:32px;
+    display:flex;
+    align-items:flex-start;
+    justify-content:center;
+    gap:24px;
+    min-height:100vh;
+  }
+
+  /* Container */
+  .app{
+    width:100%;
+    max-width:1200px;
+    display:grid;
+    grid-template-columns: 420px 1fr;
+    gap:22px;
+    align-items:start;
+  }
+
+  /* Left column: search & current */
+  .panel{
+    background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+    border-radius:var(--radius);
+    padding:18px;
+    box-shadow:var(--shadow);
+    border: 1px solid rgba(255,255,255,0.03);
+  }
+
+  header.app-header{
+    display:flex;
+    gap:12px;
+    align-items:center;
+    justify-content:space-between;
+    margin-bottom:12px;
+  }
+  .brand{
+    display:flex;
+    gap:12px;
+    align-items:center;
+  }
+  .logo{
+    width:46px;height:46px;border-radius:10px;
+    background:linear-gradient(135deg,var(--accent),var(--accent-2));
+    display:grid;place-items:center;font-weight:700;color:#042127;
+    box-shadow: 0 6px 18px rgba(125,211,252,0.08), inset 0 -6px 20px rgba(255,255,255,0.06);
+  }
+  .brand h1{font-size:16px;margin:0}
+  .brand p{font-size:12px;margin:0;color:var(--muted)}
+
+  .controls{display:flex;gap:8px;align-items:center}
+  .btn{
+    background:var(--glass);
+    border:1px solid rgba(255,255,255,0.03);
+    padding:8px 12px;border-radius:10px;color:var(--muted);
+    cursor:pointer;font-size:13px;
+  }
+  .btn.primary{
+    background:linear-gradient(90deg, rgba(125,211,252,0.06), rgba(110,231,183,0.04));
+    color:var(--accent-2);
+    font-weight:600;
+  }
+
+  /* Search */
+  .search{
+    display:flex;
+    gap:8px;
+    align-items:center;
+    margin-bottom:12px;
+  }
+  .search input{
+    flex:1;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,0.03);
+    background:transparent;color:inherit;font-size:15px;outline:none;
+    box-shadow: inset 0 -6px 18px rgba(0,0,0,0.25);
+  }
+  .search .icon{opacity:0.8}
+  .suggestions{
+    margin-top:8px;
+    background:linear-gradient(180deg, rgba(255,255,255,0.015), transparent);
+    border-radius:10px;padding:6px;border:1px solid rgba(255,255,255,0.02);
+    backdrop-filter: blur(6px);
+    max-height:220px;overflow:auto;
+  }
+  .suggestion{
+    padding:8px 10px;border-radius:8px;cursor:pointer;font-size:14px;color:var(--muted);
+  }
+  .suggestion:hover{background:rgba(255,255,255,0.02);color:var(--accent-2)}
+
+  /* Current weather card */
+  .current{
+    display:flex;gap:12px;align-items:center;
+  }
+  .current .left{
+    flex:1;
+  }
+  .current .temp{
+    font-size:52px;font-weight:700;
+    line-height:1;color:var(--accent);
+  }
+  .current .meta{color:var(--muted);margin-top:6px;font-size:14px}
+  .weather-icon{
+    width:120px;height:120px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border:1px solid rgba(255,255,255,0.02);
+  }
+
+  .details{
+    display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;
+  }
+  .detail{
+    background:var(--glass-2);padding:10px;border-radius:10px;font-size:13px;color:var(--muted);
+    min-width:110px;text-align:center;
+  }
+
+  /* Right column */
+  .main{
+    display:flex;flex-direction:column;gap:18px;
+  }
+
+  .panel.large{
+    padding:18px;
+    min-height:150px;
+  }
+
+  /* Hourly strip */
+  .hourly{
+    display:flex;flex-direction:column;
+  }
+  .hourly .strip{
+    display:flex;gap:12px;overflow:auto;padding:10px 4px;margin-top:8px;
+  }
+  .hour-card{
+    min-width:96px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+    border-radius:12px;padding:10px;text-align:center;border:1px solid rgba(255,255,255,0.02);
+  }
+  .hour-card strong{display:block;font-size:16px;margin-bottom:4px}
+
+  /* Daily grid */
+  .days{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-top:8px;
+  }
+  .day-card{
+    background:linear-gradient(180deg, rgba(255,255,255,0.015), transparent);
+    border-radius:12px;padding:12px;border:1px solid rgba(255,255,255,0.02);
+  }
+
+  /* extras */
+  .extras{display:flex;gap:12px;flex-wrap:wrap;margin-top:12px}
+  .stat{flex:1;min-width:140px;padding:12px;border-radius:12px;background:var(--glass-3);border:1px solid rgba(255,255,255,0.02);}
+
+  footer.app-footer{margin-top:10px;color:var(--muted);font-size:13px;text-align:center}
+
+  /* Loading skeleton */
+  .skeleton{background:linear-gradient(90deg, rgba(255,255,255,0.02), rgba(255,255,255,0.04), rgba(255,255,255,0.02)); border-radius:8px; height:14px; width:100%; animation: shimmer 1.6s linear infinite;}
+  @keyframes shimmer {0%{background-position:-200px 0}100%{background-position:200px 0}}
+
+  /* Responsive */
+  @media (max-width:980px){
+    .app{grid-template-columns:1fr; padding-bottom:60px}
+    body{padding:18px}
+    .logo{width:40px;height:40px}
+    .current .temp{font-size:44px}
+    .weather-icon{width:96px;height:96px}
+  }
+
+  /* small niceties */
+  .muted{color:var(--muted)}
+  .big{font-size:18px;font-weight:600}
+  .tiny{font-size:12px;color:var(--muted)}
+  a.link{color:var(--accent-2);text-decoration:none}
+  .toggle{display:inline-flex;align-items:center;gap:8px;background:var(--glass);padding:6px;border-radius:10px;border:1px solid rgba(255,255,255,0.02)}
+</style>
+</head>
+<body>
+  <div class="app" id="app">
+    <!-- LEFT COLUMN -->
+    <div class="panel">
+      <header class="app-header">
+        <div class="brand">
+          <div class="logo">CP</div>
+          <div>
+            <h1>CloudPulse</h1>
+            <p>Точная погода. Тёмная тема.</p>
+          </div>
+        </div>
+        <div class="controls">
+          <div class="toggle" title="Переключить единицы">
+            <label id="unit-label">°C</label>
+            <button class="btn" id="toggle-unit" aria-label="toggle units">⇄</button>
+          </div>
+          <button class="btn" id="locate" title="Определить моё местоположение">📍</button>
+        </div>
+      </header>
+
+      <div class="search" role="search">
+        <input id="search-input" placeholder="Поиск города или почтового индекса (например: Amsterdam, 1012)" autocomplete="off" aria-label="search city" />
+        <button class="btn primary" id="search-btn">Поиск</button>
+      </div>
+      <div id="suggestions" class="suggestions" hidden></div>
+
+      <div style="height:12px"></div>
+
+      <div id="currentCard" class="current">
+        <div class="left">
+          <div style="display:flex;align-items:center;gap:12px;justify-content:space-between">
+            <div>
+              <div class="temp" id="temp">--°</div>
+              <div class="meta" id="loc">—</div>
+            </div>
+            <div class="tiny muted" id="last-updated">обновлено: —</div>
+          </div>
+
+          <div id="cond-text" class="muted" style="margin-top:8px">—</div>
+
+          <div class="details" id="details">
+            <div class="detail">Ветер: —</div>
+            <div class="detail">Влажность: —</div>
+            <div class="detail">Давление: —</div>
+            <div class="detail">Облачность: —</div>
+          </div>
+        </div>
+
+        <div class="weather-icon" id="icon-wrap">
+          <!-- svg or img -->
+          <img id="cond-icon" src="" alt="" style="width:84px;height:84px">
+        </div>
+      </div>
+
+      <div style="height:14px"></div>
+      <div class="panel" style="padding:10px;display:flex;gap:8px;align-items:center;justify-content:space-between">
+        <div style="display:flex;gap:10px;align-items:center">
+          <div class="tiny muted">Последний запрос:</div>
+          <div id="last-city" class="big">—</div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn" id="refresh">Обновить</button>
+          <button class="btn" id="download-json" title="Скачать данные погоды">⬇️ JSON</button>
+        </div>
+      </div>
+
+      <footer class="app-footer">
+        <div>Данные: WeatherAPI.com · Ключ: <span id="api-key-short" class="muted"></span></div>
+      </footer>
+    </div>
+
+    <!-- RIGHT COLUMN -->
+    <div class="main">
+      <div class="panel large">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+          <h2 style="margin:0">Почасовой прогноз</h2>
+          <div class="tiny muted">Source: WeatherAPI</div>
+        </div>
+
+        <div id="hourly" class="hourly">
+          <div class="strip" id="hourly-strip">
+            <!-- hour cards -->
+          </div>
+        </div>
+
+        <div style="height:12px"></div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <h3 style="margin:0">Прогноз на дни</h3>
+          <div class="tiny muted">7 дней</div>
+        </div>
+
+        <div id="days" class="days"></div>
+      </div>
+
+      <div class="panel">
+        <h3 style="margin-top:0">Подробности</h3>
+        <div class="extras" id="extras">
+          <div class="stat">Восход: —<div class="tiny muted">время</div></div>
+          <div class="stat">Заход: —<div class="tiny muted">время</div></div>
+          <div class="stat">UV: —<div class="tiny muted">индекс</div></div>
+          <div class="stat">Осадки: —<div class="tiny muted">мм</div></div>
+        </div>
+        <div style="height:10px"></div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <button class="btn" id="toggle-precip">Показать осадки (график)</button>
+          <button class="btn" id="toggle-wind">Показать ветер (график)</button>
+          <a class="btn" id="about" href="#" onclick="event.preventDefault(); alert('CloudPulse — демо-проект.');">ℹ️ О приложении</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+/* ================= CONFIG ================= */
+const API_KEY = 'b3c49a30ffe144edb72135917250409';
+const BASE = 'https://api.weatherapi.com/v1';
+const DEFAULT_CITY = 'Moscow';
+const DAYS = 7; // количество дней прогноза (WeatherAPI free — до 3, но 7 у платных; если сервер вернёт меньше — обработаем)
+const appState = {
+  unit: localStorage.getItem('cp_unit') || 'C', // 'C' or 'F'
+  lastCity: localStorage.getItem('cp_lastCity') || '',
+  lastResponse: null
+};
+
+/* ======= Helpers ======= */
+function $(id){return document.getElementById(id)}
+function formatTemp(tC){
+  return appState.unit === 'C' ? Math.round(tC) + '°C' : Math.round(tC * 9/5 +32) + '°F';
+}
+function formatTimeLocal(dtStr, tzOffset=0){
+  // dtStr format from WeatherAPI: "2025-11-22 18:00"
+  const d = new Date(dtStr.replace(' ','T'));
+  return d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+}
+function friendlyDate(dtStr){
+  const date = new Date(dtStr);
+  return date.toLocaleDateString(undefined, {weekday:'short', day:'numeric', month:'short'});
+}
+function shortKey(k){ return k.slice(0,6)+'…' }
+$('api-key-short') && ($('api-key-short').textContent = shortKey(API_KEY));
+
+/* ======= UI references ======= */
+const searchInput = $('search-input');
+const searchBtn = $('search-btn');
+const suggestionsWrap = $('suggestions');
+const locateBtn = $('locate');
+const toggleUnitBtn = $('toggle-unit');
+const unitLabel = $('unit-label');
+const tempEl = $('temp');
+const locEl = $('loc');
+const condText = $('cond-text');
+const condIcon = $('cond-icon');
+const lastUpdated = $('last-updated');
+const lastCityEl = $('last-city');
+const hourlyStrip = $('hourly-strip');
+const daysWrap = $('days');
+const detailsEl = $('details');
+const extrasEl = $('extras');
+const refreshBtn = $('refresh');
+const downloadBtn = $('download-json');
+
+/* ======= Init ======= */
+unitLabel.textContent = '°' + appState.unit;
+if (appState.lastCity) lastCityEl.textContent = appState.lastCity;
+
+/* ======= API CALLS ======= */
+async function fetchWeather(q){
+  const url = \`\${BASE}/forecast.json?key=\${API_KEY}&q=\${encodeURIComponent(q)}&days=\${DAYS}&aqi=yes&alerts=yes\`;
+  const res = await fetch(url);
+  if(!res.ok){
+    const txt = await res.text();
+    throw new Error('API Error: ' + res.status + ' — ' + txt);
+  }
+  return res.json();
+}
+async function fetchSearch(q){
+  const url = \`\${BASE}/search.json?key=\${API_KEY}&q=\${encodeURIComponent(q)}\`;
+  const res = await fetch(url);
+  if(!res.ok) return [];
+  return res.json();
+}
+
+/* ======= Rendering ======= */
+function renderCurrent(data){
+  const locName = \`\${data.location.name}, \${data.location.country}\`;
+  lastCityEl.textContent = locName;
+  tempEl.textContent = formatTemp(data.current.temp_c);
+  locEl.textContent = \`\${locName} · \${data.location.localtime}\`;
+  condText.textContent = data.current.condition.text;
+  condIcon.src = 'https:' + data.current.condition.icon;
+  condIcon.alt = data.current.condition.text;
+  lastUpdated.textContent = 'обновлено: ' + new Date(data.current.last_updated.replace(' ','T')).toLocaleString();
+  // details
+  const wind = \`\${data.current.wind_kph} km/h (dir \${data.current.wind_dir})\`;
+  const hum = data.current.humidity + '%';
+  const pres = data.current.pressure_mb + ' mb';
+  const cloud = data.current.cloud + '%';
+  detailsEl.innerHTML = \`
+    <div class="detail">Ветер:<br><strong>\${wind}</strong></div>
+    <div class="detail">Влажность:<br><strong>\${hum}</strong></div>
+    <div class="detail">Давление:<br><strong>\${pres}</strong></div>
+    <div class="detail">Облачность:<br><strong>\${cloud}</strong></div>
+  \`;
+  // extras
+  const astro = data.forecast && data.forecast.forecastday && data.forecast.forecastday[0] && data.forecast.forecastday[0].astro;
+  const precip_mm = data.current.precip_mm ?? 0;
+  extrasEl.innerHTML = \`
+    <div class="stat">Восход: <div class="tiny muted">\${astro ? astro.sunrise : '—'}</div></div>
+    <div class="stat">Заход: <div class="tiny muted">\${astro ? astro.sunset : '—'}</div></div>
+    <div class="stat">UV: <div class="tiny muted">\${data.current.uv ?? '—'}</div></div>
+    <div class="stat">Осадки: <div class="tiny muted">\${precip_mm} мм</div></div>
+  \`;
+}
+
+function renderHourly(data){
+  hourlyStrip.innerHTML = '';
+  const now = Date.now();
+  const hours = data.forecast.forecastday.flatMap(fd => fd.hour);
+  // show next 24 hours (or available)
+  const nextHours = hours.slice(0, 24);
+  nextHours.forEach(h => {
+    const col = document.createElement('div');
+    col.className = 'hour-card';
+    const time = formatTimeLocal(h.time);
+    const icon = 'https:' + h.condition.icon;
+    const temp = formatTemp(h.temp_c);
+    col.innerHTML = \`
+      <strong>\${time}</strong>
+      <img src="\${icon}" alt="\${h.condition.text}" style="width:44px;height:44px;margin:6px 0">
+      <div style="font-weight:600">\${temp}</div>
+      <div class="tiny muted">\${h.condition.text}</div>
+      <div class="tiny muted" style="margin-top:6px">🌧 \${h.chance_of_rain ?? h.will_it_rain}% · 💨 \${h.wind_kph} km/h</div>
+    \`;
+    hourlyStrip.appendChild(col);
+  });
+}
+
+function renderDays(data){
+  daysWrap.innerHTML = '';
+  const days = data.forecast.forecastday || [];
+  days.forEach(d => {
+    const dayCard = document.createElement('div');
+    dayCard.className = 'day-card';
+    const dateFriendly = friendlyDate(d.date);
+    const icon = 'https:' + d.day.condition.icon;
+    const maxt = formatTemp(d.day.maxtemp_c);
+    const mint = formatTemp(d.day.mintemp_c);
+    dayCard.innerHTML = \`
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div><strong>\${dateFriendly}</strong><div class="tiny muted">\${d.date}</div></div>
+        <img src="\${icon}" alt="\${d.day.condition.text}" style="width:48px;height:48px">
+      </div>
+      <div style="margin-top:8px;font-weight:600">\${d.day.condition.text}</div>
+      <div style="display:flex;justify-content:space-between;margin-top:8px">
+        <div class="tiny muted">Макс</div><div>\${maxt}</div>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:6px">
+        <div class="tiny muted">Мин</div><div>\${mint}</div>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:10px">
+        <div class="tiny muted">Осадки</div><div>\${d.day.totalprecip_mm} мм</div>
+      </div>
+    \`;
+    daysWrap.appendChild(dayCard);
+  });
+}
+
+/* ======= Main flow ======= */
+async function loadWeatherFor(q, opts={save:true}){
+  try{
+    showLoading();
+    const data = await fetchWeather(q);
+    appState.lastResponse = data;
+    renderCurrent(data);
+    renderHourly(data);
+    renderDays(data);
+    if (opts.save){
+      localStorage.setItem('cp_lastCity', \`\${data.location.name}, \${data.location.country}\`);
+      appState.lastCity = \`\${data.location.name}, \${data.location.country}\`;
+      lastCityEl.textContent = appState.lastCity;
+    }
+    hideSuggestions();
+  }catch(e){
+    console.error(e);
+    alert('Не удалось загрузить погоду: ' + e.message);
+  }finally{
+    hideLoading();
+  }
+}
+
+function showLoading(){
+  tempEl.textContent = '—°';
+  condText.textContent = 'Загрузка...';
+}
+
+function hideLoading(){
+  // nothing fancy — data will be rendered by render functions
+}
+
+/* ======= Events ======= */
+let searchDebounceTimer = null;
+searchInput.addEventListener('input', async e => {
+  const q = e.target.value.trim();
+  clearTimeout(searchDebounceTimer);
+  if (!q){
+    hideSuggestions(); return;
+  }
+  searchDebounceTimer = setTimeout(async () => {
+    try{
+      const res = await fetchSearch(q);
+      if (!res || res.length === 0){ hideSuggestions(); return; }
+      showSuggestions(res);
+    }catch(err){
+      console.warn('search err',err);
+      hideSuggestions();
+    }
+  }, 300);
+});
+
+searchInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') searchBtn.click();
+});
+
+function showSuggestions(list){
+  suggestionsWrap.innerHTML = '';
+  list.slice(0,10).forEach(item => {
+    const el = document.createElement('div');
+    el.className = 'suggestion';
+    el.textContent = \`\${item.name}, \${item.region || item.country || ''}\`;
+    el.onclick = () => {
+      searchInput.value = item.name;
+      hideSuggestions();
+      loadWeatherFor(item.url || item.name);
+    };
+    suggestionsWrap.appendChild(el);
+  });
+  suggestionsWrap.hidden = false;
+}
+
+function hideSuggestions(){ suggestionsWrap.hidden = true; suggestionsWrap.innerHTML=''; }
+
+searchBtn.addEventListener('click', () => {
+  const q = searchInput.value.trim();
+  if (!q){
+    alert('Введите город или почтовый индекс');
+    return;
+  }
+  loadWeatherFor(q);
+});
+
+locateBtn.addEventListener('click', () => {
+  if (!navigator.geolocation){
+    alert('Геолокация не поддерживается этим браузером.');
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(async pos => {
+    const lat = pos.coords.latitude, lon = pos.coords.longitude;
+    loadWeatherFor(\`\${lat},\${lon}\`);
+  }, err => {
+    alert('Не удалось определить местоположение: ' + err.message);
+  }, {enableHighAccuracy:true, timeout:10000});
+});
+
+toggleUnitBtn.addEventListener('click', () => {
+  appState.unit = appState.unit === 'C' ? 'F' : 'C';
+  unitLabel.textContent = '°' + appState.unit;
+  localStorage.setItem('cp_unit', appState.unit);
+  // re-render last response if exists
+  if (appState.lastResponse){
+    renderCurrent(appState.lastResponse);
+    renderHourly(appState.lastResponse);
+    renderDays(appState.lastResponse);
+  }
+});
+
+refreshBtn.addEventListener('click', () => {
+  if (appState.lastCity) loadWeatherFor(appState.lastCity);
+  else loadWeatherFor(DEFAULT_CITY);
+});
+
+downloadBtn.addEventListener('click', () => {
+  if (!appState.lastResponse){ alert('Нет данных для скачивания'); return; }
+  const blob = new Blob([JSON.stringify(appState.lastResponse, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'weather.json';
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+});
+
+/* ======= Keyboard shortcuts (nice UX) ======= */
+document.addEventListener('keydown', e => {
+  if (e.key === 'k' && (e.ctrlKey || e.metaKey)){ e.preventDefault(); searchInput.focus(); searchInput.select(); }
+});
+
+/* ======= Small animations: background parallax on mouse ======= */
+document.addEventListener('mousemove', e => {
+  const x = (e.clientX / window.innerWidth - 0.5) * 20;
+  const y = (e.clientY / window.innerHeight - 0.5) * 20;
+  document.body.style.backgroundPosition = \`\${50 - x}% \${50 - y}%\`;
+});
+
+/* ======= On load: try to restore or geolocate ======= */
+async function start(){
+  // if last city in storage, use it
+  if (appState.lastCity){
+    try {
+      await loadWeatherFor(appState.lastCity, {save:false}); // we already have it saved
+      return;
+    } catch(e){
+      console.warn('restore lastCity failed',e);
+    }
+  }
+
+  // try geolocation silently
+  if (navigator.geolocation){
+    navigator.geolocation.getCurrentPosition(async pos => {
+      try { await loadWeatherFor(\`\${pos.coords.latitude},\${pos.coords.longitude}\`); }
+      catch(e){ console.warn(e); await loadWeatherFor(DEFAULT_CITY); }
+    }, async err => {
+      // fallback to default
+      await loadWeatherFor(DEFAULT_CITY);
+    }, {timeout:6000});
+  } else {
+    await loadWeatherFor(DEFAULT_CITY);
+  }
+}
+
+start();
+
+/* ======= Extra: toggles that show simple charts (built-in canvas) ======= */
+document.getElementById('toggle-precip').addEventListener('click', () => {
+  if (!appState.lastResponse){ alert('Сначала выполните поиск города.'); return; }
+  showSimpleChart(appState.lastResponse, 'precip_mm', 'Осадки (мм)');
+});
+document.getElementById('toggle-wind').addEventListener('click', () => {
+  if (!appState.lastResponse){ alert('Сначала выполните поиск города.'); return; }
+  showSimpleChart(appState.lastResponse, 'wind_kph', 'Ветер (км/ч)');
+});
+
+function showSimpleChart(data, key, label){
+  // build modal with simple canvas chart
+  const hours = data.forecast.forecastday.flatMap(fd => fd.hour).slice(0,24);
+  const values = hours.map(h => h[key] ?? 0);
+  const labels = hours.map(h => formatTimeLocal(h.time));
+  // create modal
+  const modal = document.createElement('div');
+  modal.style.position='fixed';modal.style.inset='0';modal.style.background='rgba(2,6,12,0.6)';
+  modal.style.display='grid';modal.style.placeItems='center';modal.style.zIndex=9999;
+  const card = document.createElement('div');
+  card.style.width='min(880px,96%)';card.style.background='var(--card)';card.style.borderRadius='14px';card.style.padding='18px';
+  card.style.border='1px solid rgba(255,255,255,0.03)';
+  const title = document.createElement('div'); title.innerHTML = '<strong>'+label+'</strong><div class="tiny muted">24 часа</div>';
+  const canvas = document.createElement('canvas'); canvas.width=800; canvas.height=300; canvas.style.width='100%'; canvas.style.marginTop='10px';
+  const close = document.createElement('button'); close.className='btn'; close.textContent='Закрыть'; close.style.marginTop='12px';
+  card.appendChild(title); card.appendChild(canvas); card.appendChild(close); modal.appendChild(card); document.body.appendChild(modal);
+  close.onclick = () => modal.remove();
+
+  // draw simple chart with JS + canvas
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  const padding = 40;
+  const w = canvas.width - padding*2;
+  const h = canvas.height - padding*2;
+  const max = Math.max(...values) || 1;
+  const min = Math.min(...values);
+  // grid
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth=1;
+  for (let i=0;i<=4;i++){
+    const y = padding + (h/4)*i;
+    ctx.beginPath(); ctx.moveTo(padding,y); ctx.lineTo(padding+w,y); ctx.stroke();
+  }
+  // polyline
+  ctx.beginPath();
+  values.forEach((v,i)=>{
+    const x = padding + (i/(values.length-1))*w;
+    const y = padding + h - ((v - min)/(max - min || 1))*h;
+    if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+  });
+  ctx.strokeStyle = 'rgba(125,211,252,0.9)'; ctx.lineWidth=2.6; ctx.stroke();
+  // points
+  values.forEach((v,i)=>{
+    const x = padding + (i/(values.length-1))*w;
+    const y = padding + h - ((v - min)/(max - min || 1))*h;
+    ctx.fillStyle='rgba(125,211,252,0.95)'; ctx.beginPath(); ctx.arc(x,y,3,0,Math.PI*2); ctx.fill();
+  });
+  // labels (only few)
+  ctx.fillStyle='rgba(255,255,255,0.7)'; ctx.font='12px Inter';
+  for (let i=0;i<values.length;i+=Math.ceil(values.length/6)){
+    const x = padding + (i/(values.length-1))*w;
+    ctx.fillText(labels[i], x-18, padding+h+18);
+  }
+  // left scale
+  ctx.fillStyle='rgba(255,255,255,0.6)'; ctx.font='12px Inter';
+  ctx.fillText(max.toFixed(0), 8, padding+6);
+  ctx.fillText(((max+min)/2).toFixed(0), 8, padding + h/2);
+  ctx.fillText(min.toFixed(0), 8, padding + h + 4);
+}
+
+/* ======= Extra accessibility: announce errors ======= */
+window.addEventListener('error', e => {
+  console.error('Unhandled error', e);
+});
+
+</script>
+</body>
+</html>
